@@ -45,29 +45,27 @@ void parallel_sinx(int N, int terms, float* x, float* y)
     my_thread.join(); // wait for thread to complete
 }
 void simd_sinx(int N, int terms, float* x, float* y) {
-    float three_fact = 6; // 3!
     for (int i=0; i<N; i+=8)
     {
         __m256 origx = _mm256_load_ps(&x[i]);
         __m256 value = origx;
         __m256 numer = _mm256_mul_ps(origx, _mm256_mul_ps(origx, origx));
-        __m256 denom = _mm256_broadcast_ss(&three_fact);
-        int sign = -1;
-        for (int j=1; j<=terms; j++)
-        {
-            // value += sign * numer / denom
-            __m256 tmp = _mm256_div_ps(_mm256_mul_ps(_mm256_set1_ps(sign), numer), denom);
+        __m256 denom = _mm256_set1_ps(6.0f); // 3!
+        __m256 sign_vec = _mm256_set1_ps(-1.0f);
+
+        for (int j = 1; j <= terms; j++) {
+            __m256 tmp = _mm256_div_ps(_mm256_mul_ps(sign_vec, numer), denom);
             value = _mm256_add_ps(value, tmp);
             numer = _mm256_mul_ps(numer, _mm256_mul_ps(origx, origx));
             float temp = static_cast<float>((2 * j + 2) * (2 * j + 3));
             denom = _mm256_mul_ps(denom, _mm256_broadcast_ss(&temp));
-            sign *= -1;
+            sign_vec = _mm256_mul_ps(sign_vec, _mm256_set1_ps(-1.0f));
         }
         _mm256_store_ps(&y[i], value);
     }
 }
 int main() {
-    int N=1000000/8*8;
+    int N=100000;
     int terms=20;
     float x[N];
     float y[N];
