@@ -3,6 +3,7 @@
 #include <random>  // for random number generators
 #include <thread>  //for thread
 #include <immintrin.h> //for avx
+#include <avx512fintrin.h> //for avx512
 
 void sinx(int N,int terms,float* x,float* y){
     for(int i=0;i<N;i++){
@@ -64,11 +65,49 @@ void simd_sinx(int N, int terms, float* x, float* y) {
         _mm256_store_ps(&y[i], value);
     }
 }
+// AVX512 
+void simd512_sinx(int N, int terms, float* x, float* y) {
+    if (N <= 0 || x == nullptr || y == nullptr) {
+        return;
+    }
+    float three_fact = 6; // 3!
+    for (int i = 0; i + 16 <= N; i += 16) {
+        __m512 origx = _mm512_load_ps(&x[i]);
+        __m512 value = origx;
+        __m512 numer = _mm512_mul_ps(origx, _mm512_mul_ps(origx, origx));
+        __m512 denom = _mm512_broadcastss_ps(_mm_load_ss(&three_fact));
+        int sign = -1;
+        for (int j = 1; j <= terms; j++) {
+            // value += sign * numer / denom
+            __m512 tmp = _mm512_div_ps(_mm512_mul_ps(_mm512_set1_ps(sign), numer), denom);
+            value = _mm512_add_ps(value, tmp);
+            numer = _mm512_mul_ps(numer, _mm512_mul_ps(origx, origx));
+            float factor = static_cast<float>((2 * j + 2) * (2 * j + 3));
+            denom = _mm512_mul_ps(denom, _mm512_broadcastss_ps(_mm_load_ss(&factor)));
+            sign *= -1;
+        }
+        _mm512_store_ps(&y[i], value);
+    }
+    for (int i = N - N % 16; i < N; i++) {
+        float origx = x[i];
+        float value = origx;
+        float numer = origx * origx * origx;
+        float denom = three_fact;
+        int sign = -1;
+        for (int j = 1; j <= terms; j++) {
+            value += sign * numer / denom;
+            numer *= origx * origx;
+            denom *= (2 * j + 2) * (2 * j + 3);
+            sign *= -1;
+        }
+        y[i] = value;
+    }
+}
 int main() {
-    int N=100000;
-    int terms=20;
-    float x[N];
-    float y[N];
+    int N=1000000;
+    int terms=50;
+    alignas(64) float x[N];
+    alignas(64) float y[N];
     std::cout << "Program N: " << N << std::endl;
     // Random number engine
     std::mt19937 rng(std::random_device{}());
@@ -95,6 +134,12 @@ int main() {
     auto end3 = std::chrono::high_resolution_clock::now();
     auto duration3 = std::chrono::duration_cast<std::chrono::microseconds>(end3 - start3);
     std::cout << "Program execution time: " << duration3.count() << " microseconds" << std::endl;
+    // simd sinx avx512
+    auto start4 = std::chrono::high_resolution_clock::now();
+    simd512_sinx(N,terms,x,y);
+    auto end4 = std::chrono::high_resolution_clock::now();
+    auto duration4 = std::chrono::duration_cast<std::chrono::microseconds>(end4 - start4);
+    std::cout << "Program execution time: " << duration4.count() << " microseconds" << std::endl;
 
     return 0;
 }
